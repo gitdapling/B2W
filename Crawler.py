@@ -6,11 +6,11 @@ import psycopg2
 import requests
 from bs4 import BeautifulSoup
 
-# === CONFIG: CHANGE THESE ===
-BASE_URL = "https://example-edu-site.com"
-START_URL = BASE_URL + "/courses"  # starting page that links to videos
+# === CONFIG: CHANGE THESE TO MATCH YOUR SITE ===
+BASE_URL = "https://www.blacktowhite.net/"
+START_URL = https://www.blacktowhite.net/fucking-videos/  # starting page that links to videos
 ALLOWED_DOMAIN = urlparse(BASE_URL).netloc
-MAX_PAGES = 200  # safety cap
+MAX_PAGES = 200  # safety cap so we don't crawl forever
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -18,10 +18,12 @@ HEADERS = {
     "User-Agent": "VideoIndexerBot/1.0 (respecting robots.txt; contact: you@example.com)"
 }
 
+
 def get_conn():
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL not set")
     return psycopg2.connect(DATABASE_URL)
+
 
 def init_db():
     conn = get_conn()
@@ -41,6 +43,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 def save_video(title, page_url, mp4_url, description=""):
     conn = get_conn()
     cur = conn.cursor()
@@ -55,15 +58,19 @@ def save_video(title, page_url, mp4_url, description=""):
     conn.commit()
     conn.close()
 
+
 def get_page(url):
     print(f"Fetching {url}")
     resp = requests.get(url, headers=HEADERS, timeout=20)
     resp.raise_for_status()
     return resp.text
 
+
 def is_same_domain(url):
     parsed = urlparse(url)
+    # Empty netloc = relative URL (same domain)
     return parsed.netloc == "" or parsed.netloc == ALLOWED_DOMAIN
+
 
 def crawl():
     init_db()
@@ -87,24 +94,27 @@ def crawl():
 
         soup = BeautifulSoup(html, "html.parser")
 
-        # 1) <video> and <source> tags
+        # === FIND VIDEOS VIA <video> OR <source> TAGS ===
         for video_tag in soup.find_all(["video", "source"]):
             src = video_tag.get("src")
             if src and src.endswith(".mp4"):
-                mp4_url = urljoin(url, src)
+                mp4_url = urljoin(url, src)  # keep MP4 exactly as is
+                # Add /lightbox to the original page URL
+                page_url = url.rstrip("/") + "/lightbox"
                 title = (soup.title.string.strip() if soup.title else "Untitled")
-                save_video(title, url, mp4_url)
+                save_video(title, page_url, mp4_url)
 
-        # 2) Direct links to .mp4
+        # === FIND DIRECT LINKS TO .mp4 FILES ===
         for a in soup.find_all("a", href=True):
             href = a["href"]
             if href.endswith(".mp4"):
-                mp4_url = urljoin(url, href)
+                mp4_url = urljoin(url, href)  # keep MP4 as is
+                page_url = url.rstrip("/") + "/lightbox"
                 link_text = a.get_text(strip=True)
                 title = link_text or (soup.title.string.strip() if soup.title else "Untitled")
-                save_video(title, url, mp4_url)
+                save_video(title, page_url, mp4_url)
 
-        # 3) Find more internal links
+        # === DISCOVER MORE INTERNAL PAGES TO CRAWL ===
         for a in soup.find_all("a", href=True):
             href = a["href"]
             full_url = urljoin(url, href)
@@ -112,9 +122,10 @@ def crawl():
                 if full_url not in visited and full_url not in to_visit:
                     to_visit.append(full_url)
 
-        time.sleep(0.5)  # be polite
+        # Be polite to the server
+        time.sleep(0.5)
+
 
 if __name__ == "__main__":
     crawl()
     print("Crawl complete.")
-  
